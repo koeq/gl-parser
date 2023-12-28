@@ -2,6 +2,7 @@ package parse
 
 import (
 	"errors"
+	"fmt"
 )
 
 // Weight Units
@@ -25,6 +26,17 @@ const (
 	WeightUnit   TokenVariant = "WEIGHT_UNIT"
 	Whitespace   TokenVariant = "WHITE_SPACE"
 )
+
+var tokenMap = map[rune]TokenVariant{
+	'@':  Asperand,
+	'*':  Asterisk,
+	'/':  ForwardSlash,
+	'-':  Hyphen,
+	'\n': Newline,
+	' ':  Whitespace,
+	'\r': Whitespace,
+	'\t': Whitespace,
+}
 
 type Weight struct {
 	value float64
@@ -50,14 +62,38 @@ type Scanner struct {
 	line    int
 }
 
-func (s *Scanner) isAtEnd(source string) bool {
-	return s.current >= len(source)
+func (s *Scanner) isAtEnd(src []rune) bool {
+	return s.current >= len(src)
 }
 
-func (s *Scanner) tokenize(source string) (tokens []Token) {
-	for !s.isAtEnd(source) {
+func (s *Scanner) advance(src []rune) rune {
+	next := src[s.current]
+	s.current++
+
+	return next
+}
+
+func (s *Scanner) scan(src []rune) error {
+	r := s.advance(src)
+
+	switch r {
+	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
+		addToken(tokenMap[r])
+	default:
+		switch r {
+		case isString(r):
+		case isNum(r):
+		default:
+			return fmt.Errorf("unexpected character at line %d", s.line)
+		}
+
+	}
+}
+
+func (s *Scanner) tokenize(src []rune) (tokens []Token) {
+	for !s.isAtEnd(src) {
 		s.start = s.current
-		s.scan()
+		s.scan(src)
 	}
 
 	tokens = append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
@@ -77,7 +113,7 @@ func Parse(source string) (exercises []Exercise, err error) {
 		return nil, errors.New("empty source string")
 	}
 
-	tokens := (&Scanner{}).tokenize(source)
+	tokens := (&Scanner{}).tokenize([]rune(source))
 
 	return (&Interpreter{}).interpret(tokens)
 }
