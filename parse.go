@@ -3,17 +3,13 @@ package parse
 import (
 	"errors"
 	"fmt"
-)
-
-// Weight Units
-const (
-	Kilogram = "kg"
-	Pound    = "lbs"
+	"regexp"
 )
 
 type TokenVariant string
 
 // Token Variants
+// The token type String represents one or multiple letters that are not keywords
 const (
 	Asperand     TokenVariant = "ASPERAND"
 	Asterisk     TokenVariant = "ASTERISK"
@@ -21,21 +17,26 @@ const (
 	ForwardSlash TokenVariant = "FORWARD_SLASH"
 	Hyphen       TokenVariant = "HYPHEN"
 	Newline      TokenVariant = "NEWLINE"
-	Number       TokenVariant = "NUMBER"
+	Digit        TokenVariant = "DIGIT"
 	String       TokenVariant = "STRING"
 	WeightUnit   TokenVariant = "WEIGHT_UNIT"
-	Whitespace   TokenVariant = "WHITE_SPACE"
+	WhiteSpace   TokenVariant = "WHITE_SPACE"
 )
 
-var tokenMap = map[rune]TokenVariant{
+var tokenVariantMap = map[rune]TokenVariant{
 	'@':  Asperand,
 	'*':  Asterisk,
 	'/':  ForwardSlash,
 	'-':  Hyphen,
 	'\n': Newline,
-	' ':  Whitespace,
-	'\r': Whitespace,
-	'\t': Whitespace,
+	' ':  WhiteSpace,
+	'\r': WhiteSpace,
+	'\t': WhiteSpace,
+}
+
+var keywordVariantMap = map[string]TokenVariant{
+	"kg":  WeightUnit,
+	"lbs": WeightUnit,
 }
 
 type Weight struct {
@@ -56,47 +57,76 @@ type Token struct {
 }
 
 type Scanner struct {
+	src     []rune
 	tokens  []Token
 	start   int
 	current int
 	line    int
 }
 
-func (s *Scanner) isAtEnd(src []rune) bool {
-	return s.current >= len(src)
+func (s *Scanner) isAtEnd() bool {
+	return s.current >= len(s.src)
 }
 
-func (s *Scanner) advance(src []rune) rune {
-	next := src[s.current]
+func (s *Scanner) advance() rune {
+	next := s.src[s.current]
 	s.current++
 
 	return next
 }
 
-func (s *Scanner) scan(src []rune) error {
-	r := s.advance(src)
+func (s *Scanner) addToken(variant TokenVariant, literal string) {
+	s.tokens = append(s.tokens, Token{variant, literal, s.line})
+}
 
-	switch r {
-	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
-		addToken(tokenMap[r])
-	default:
-		switch r {
-		case isString(r):
-		case isNum(r):
-		default:
-			return fmt.Errorf("unexpected character at line %d", s.line)
-		}
+func (s *Scanner) peek() rune {
+	if s.isAtEnd() {
+		return 0
+	}
 
+	return s.src[s.current]
+}
+
+func (s *Scanner) processWord() {
+	for isLetter(s.peek()) {
+		s.advance()
+	}
+
+	word := string(s.src[s.start:s.current])
+	tokenVariant, isKeyword := keywordVariantMap[word]
+
+	if isKeyword {
+		s.addToken(tokenVariant, word)
+	} else {
+		s.addToken(String, word)
 	}
 }
 
-func (s *Scanner) tokenize(src []rune) (tokens []Token) {
-	for !s.isAtEnd(src) {
-		s.start = s.current
-		s.scan(src)
+func (s *Scanner) scan() error {
+	r := s.advance()
+
+	switch r {
+	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
+		s.addToken(tokenVariantMap[r], "")
+	default:
+		switch r {
+		case isLetter(r):
+		case isDigit(r):
+		default:
+			return fmt.Errorf("unexpected character at line %d", s.line)
+		}
 	}
 
-	tokens = append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
+	return nil
+}
+
+func (s *Scanner) tokenize() (tokens []Token) {
+	for !s.isAtEnd() {
+		s.start = s.current
+		s.scan()
+	}
+
+	s.tokens = append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
 
 	return s.tokens
 }
@@ -113,17 +143,33 @@ func Parse(source string) (exercises []Exercise, err error) {
 		return nil, errors.New("empty source string")
 	}
 
-	tokens := (&Scanner{}).tokenize([]rune(source))
+	// TODO: create scanner
+	tokens := (&Scanner{}).tokenize()
 
+	// TODO: create interpreter
 	return (&Interpreter{}).interpret(tokens)
 }
 
 // Utils
 func isValidTokenVariant(tv TokenVariant) bool {
 	switch tv {
-	case Asperand, ForwardSlash, Asterisk, Number, String, Hyphen, WeightUnit, Whitespace:
+	case Asperand, Asterisk, Digit, ForwardSlash, Hyphen, String, WeightUnit, WhiteSpace:
 		return true
 	default:
 		return false
 	}
+}
+
+var (
+	// match letters + combining marks
+	letterRegex = regexp.MustCompile(`[\p{L}\p{M}]`)
+	digitRegex  = regexp.MustCompile(`\d`)
+)
+
+func isLetter(r rune) bool {
+	return letterRegex.MatchString(string(r))
+}
+
+func isDigit(r rune) bool {
+	return digitRegex.MatchString(string(r))
 }
