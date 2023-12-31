@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 type TokenVariant string
 
-// Token Variants
-// The token type String represents one or multiple letters that are not keywords
+// token Variants
+// the token type string represents one or multiple letters that are not keywords
 const (
 	Asperand     TokenVariant = "ASPERAND"
 	Asterisk     TokenVariant = "ASTERISK"
@@ -17,7 +19,7 @@ const (
 	ForwardSlash TokenVariant = "FORWARD_SLASH"
 	Hyphen       TokenVariant = "HYPHEN"
 	Newline      TokenVariant = "NEWLINE"
-	Digit        TokenVariant = "DIGIT"
+	Number       TokenVariant = "NUMBER"
 	String       TokenVariant = "STRING"
 	WeightUnit   TokenVariant = "WEIGHT_UNIT"
 	WhiteSpace   TokenVariant = "WHITE_SPACE"
@@ -52,7 +54,7 @@ type Exercise struct {
 
 type Token struct {
 	variant TokenVariant
-	lexeme  string
+	lexeme  interface{}
 	line    int
 }
 
@@ -68,6 +70,10 @@ func (s *Scanner) isAtEnd() bool {
 	return s.current >= len(s.src)
 }
 
+func (s *Scanner) isNextAtEnd() bool {
+	return s.current+1 >= len(s.src)
+}
+
 func (s *Scanner) advance() rune {
 	next := s.src[s.current]
 	s.current++
@@ -75,7 +81,7 @@ func (s *Scanner) advance() rune {
 	return next
 }
 
-func (s *Scanner) addToken(variant TokenVariant, literal string) {
+func (s *Scanner) addToken(variant TokenVariant, literal interface{}) {
 	s.tokens = append(s.tokens, Token{variant, literal, s.line})
 }
 
@@ -102,16 +108,49 @@ func (s *Scanner) processWord() {
 	}
 }
 
-func (s *Scanner) scan() error {
+func (s *Scanner) peekNext() rune {
+	if s.isNextAtEnd() {
+		return 0
+	}
+
+	return s.src[s.current+1]
+}
+
+func (s *Scanner) processNumber() {
+	for isDigit(s.peek()) {
+		s.advance()
+	}
+
+	// look for fractional part
+	if s.peek() == '.' || s.peek() == ',' && isDigit(s.peekNext()) {
+		// consume it
+		s.advance()
+
+		for isDigit(s.peek()) {
+			s.advance()
+		}
+	}
+
+	f, err := strconv.ParseFloat(strings.Replace(string(s.src[s.start:s.current]), ",", ".", 1), 32)
+
+	// TODO: handle error case
+	if err == nil {
+		s.addToken(Number, f)
+	}
+}
+
+func (s *Scanner) tokenize() error {
 	r := s.advance()
 
 	switch r {
 	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
 		s.addToken(tokenVariantMap[r], "")
 	default:
-		switch r {
+		switch {
 		case isLetter(r):
+			s.processWord()
 		case isDigit(r):
+			s.processNumber()
 		default:
 			return fmt.Errorf("unexpected character at line %d", s.line)
 		}
@@ -120,15 +159,14 @@ func (s *Scanner) scan() error {
 	return nil
 }
 
-func (s *Scanner) tokenize() (tokens []Token) {
+func (s *Scanner) scan() (tokens []Token) {
 	for !s.isAtEnd() {
 		s.start = s.current
-		s.scan()
+		s.tokenize()
 	}
 
-	s.tokens = append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
+	return append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
 
-	return s.tokens
 }
 
 type Interpreter struct{}
@@ -138,28 +176,23 @@ func (i *Interpreter) interpret(tokens []Token) (exercises []Exercise, err error
 	return []Exercise{}, nil
 }
 
+func newScanner(src []rune) (s *Scanner) {
+	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
+}
+
 func Parse(source string) (exercises []Exercise, err error) {
 	if source == "" {
 		return nil, errors.New("empty source string")
 	}
 
-	// TODO: create scanner
-	tokens := (&Scanner{}).tokenize()
+	scanner := newScanner([]rune(source))
+	tokens := scanner.scan()
 
 	// TODO: create interpreter
 	return (&Interpreter{}).interpret(tokens)
 }
 
-// Utils
-func isValidTokenVariant(tv TokenVariant) bool {
-	switch tv {
-	case Asperand, Asterisk, Digit, ForwardSlash, Hyphen, String, WeightUnit, WhiteSpace:
-		return true
-	default:
-		return false
-	}
-}
-
+// utils
 var (
 	// match letters + combining marks
 	letterRegex = regexp.MustCompile(`[\p{L}\p{M}]`)
