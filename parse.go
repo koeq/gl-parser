@@ -65,6 +65,16 @@ type Scanner struct {
 	start   int
 	current int
 	line    int
+	errors  []ScanError
+}
+
+type ScanError struct {
+	line int
+	r    string
+}
+
+func (e *ScanError) Error() string {
+	return fmt.Sprintf("unexpected character %q at line %d", e.r, e.line)
 }
 
 func (s *Scanner) isAtEnd() bool {
@@ -139,13 +149,14 @@ func (s *Scanner) processNumber() {
 	sNum := strings.Replace(string(s.src[s.start:s.current]), ",", ".", 1)
 	f, err := strconv.ParseFloat(sNum, 32)
 
-	// TODO: handle error case
-	if err == nil {
+	if err != nil {
+		s.errors = append(s.errors, ScanError{s.line, sNum})
+	} else {
 		s.addToken(Number, sNum, f)
 	}
 }
 
-func (s *Scanner) tokenize() error {
+func (s *Scanner) tokenize() {
 	r := s.advance()
 
 	switch r {
@@ -158,20 +169,18 @@ func (s *Scanner) tokenize() error {
 		case isDigit(r):
 			s.processNumber()
 		default:
-			return fmt.Errorf("unexpected character at line %d", s.line)
+			s.errors = append(s.errors, ScanError{s.line, string(r)})
 		}
 	}
-
-	return nil
 }
 
-func (s *Scanner) scan() (tokens []Token) {
+func (s *Scanner) scan() (tokens []Token, errs []ScanError) {
 	for !s.isAtEnd() {
 		s.start = s.current
 		s.tokenize()
 	}
 
-	return append(s.tokens, Token{"EOF", "", nil, s.line})
+	return append(s.tokens, Token{"EOF", "", nil, s.line}), s.errors
 
 }
 
@@ -192,7 +201,12 @@ func Parse(source string) (exercises []Exercise, err error) {
 	}
 
 	scanner := newScanner([]rune(source))
-	tokens := scanner.scan()
+	tokens, errs := scanner.scan()
+
+	// report scanning errors
+	for _, err := range errs {
+		fmt.Println(err)
+	}
 
 	// TODO: create interpreter
 	return (&Interpreter{}).interpret(tokens)
