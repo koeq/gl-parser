@@ -10,8 +10,8 @@ import (
 
 type TokenVariant string
 
-// token Variants
-// the token type string represents one or multiple letters that are not keywords
+// token variants
+// "STRING" represents one or multiple letters that are not keywords
 const (
 	Asperand     TokenVariant = "ASPERAND"
 	Asterisk     TokenVariant = "ASTERISK"
@@ -25,7 +25,7 @@ const (
 	WhiteSpace   TokenVariant = "WHITE_SPACE"
 )
 
-var tokenVariantMap = map[rune]TokenVariant{
+var TokenVariantMap = map[rune]TokenVariant{
 	'@':  Asperand,
 	'*':  Asterisk,
 	'/':  ForwardSlash,
@@ -54,7 +54,8 @@ type Exercise struct {
 
 type Token struct {
 	variant TokenVariant
-	lexeme  interface{}
+	lexeme  string
+	literal interface{}
 	line    int
 }
 
@@ -81,8 +82,12 @@ func (s *Scanner) advance() rune {
 	return next
 }
 
-func (s *Scanner) addToken(variant TokenVariant, literal interface{}) {
-	s.tokens = append(s.tokens, Token{variant, literal, s.line})
+func (s *Scanner) addToken(variant TokenVariant, lexeme string, literal interface{}) {
+	s.tokens = append(s.tokens, Token{variant, lexeme, literal, s.line})
+
+	if variant == Newline {
+		s.line++
+	}
 }
 
 func (s *Scanner) peek() rune {
@@ -102,9 +107,9 @@ func (s *Scanner) processWord() {
 	tokenVariant, isKeyword := keywordVariantMap[word]
 
 	if isKeyword {
-		s.addToken(tokenVariant, word)
+		s.addToken(tokenVariant, word, word)
 	} else {
-		s.addToken(String, word)
+		s.addToken(String, word, word)
 	}
 }
 
@@ -131,11 +136,12 @@ func (s *Scanner) processNumber() {
 		}
 	}
 
-	f, err := strconv.ParseFloat(strings.Replace(string(s.src[s.start:s.current]), ",", ".", 1), 32)
+	sNum := strings.Replace(string(s.src[s.start:s.current]), ",", ".", 1)
+	f, err := strconv.ParseFloat(sNum, 32)
 
 	// TODO: handle error case
 	if err == nil {
-		s.addToken(Number, f)
+		s.addToken(Number, sNum, f)
 	}
 }
 
@@ -144,7 +150,7 @@ func (s *Scanner) tokenize() error {
 
 	switch r {
 	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
-		s.addToken(tokenVariantMap[r], "")
+		s.addToken(TokenVariantMap[r], string(r), nil)
 	default:
 		switch {
 		case isLetter(r):
@@ -165,7 +171,7 @@ func (s *Scanner) scan() (tokens []Token) {
 		s.tokenize()
 	}
 
-	return append(s.tokens, Token{variant: "EOF", lexeme: "", line: s.line})
+	return append(s.tokens, Token{"EOF", "", nil, s.line})
 
 }
 
