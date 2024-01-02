@@ -79,6 +79,7 @@ type Interpreter struct {
 	start         int
 	current       int
 	exerciseIndex int
+	exerciseName  string
 	weight        Weight
 	reps          []int
 }
@@ -194,24 +195,24 @@ func (sc *Scanner) scan() (tokens []Token, errs []ScanError) {
 
 }
 
-func (i *Interpreter) isAtEnd(tokens []Token) bool {
-	return tokens[i.current].variant == EOF
+func (it *Interpreter) isAtEnd() bool {
+	return it.tokens[it.current].variant == EOF
 }
 
-func (i *Interpreter) advance(tokens []Token) Token {
-	token := tokens[i.current]
-	i.current++
+func (it *Interpreter) advance() Token {
+	token := it.tokens[it.current]
+	it.current++
 
 	return token
 }
 
-func (i *Interpreter) peek(tokens []Token) Token {
-	return tokens[i.current]
+func (it *Interpreter) peek() Token {
+	return it.tokens[it.current]
 }
 
-func (i *Interpreter) build() string {
+func (it *Interpreter) build() string {
 	var builder strings.Builder
-	ts := i.tokens[i.start:i.current]
+	ts := it.tokens[it.start:it.current]
 
 	for _, t := range ts {
 		builder.WriteString(strings.TrimSpace(t.lexeme))
@@ -220,48 +221,67 @@ func (i *Interpreter) build() string {
 	return builder.String()
 }
 
-func (i *Interpreter) processExerciseName(token Token) {
+func (it *Interpreter) processExerciseName(token Token) {
 	for isExerciseName(token.variant) {
-		next := i.peek(i.tokens)
+		next := it.peek()
 
 		if isExerciseName(next.variant) {
-			token = i.advance(i.tokens)
+			token = it.advance()
 		}
 	}
 
 	// reset interpreter state
-	i.weight.unit = ""
-	i.weight.value = 0
-	i.reps = nil
+	it.weight.unit = ""
+	it.weight.value = 0
+	it.reps = nil
 
-	i.exerciseIndex++
+	it.exerciseIndex++
 
-	name := i.build()
-	i.exercises = append(i.exercises, Exercise{name, i.weight, i.reps})
+	name := it.build()
+	it.exercises = append(it.exercises, Exercise{name, it.weight, it.reps})
 }
 
-func (i *Interpreter) processWeight(token Token) {
-	// next := i.peek(i.tokens)
+func (it *Interpreter) processWeight() {
+	next := it.peek()
 
-	// if isDigit(next.lexeme) {
-	// 	token = i.advance(i.tokens)
-	// }
+	if next.variant == Number {
+		// TODO: failed assertion would cause a runtime panic -> find better solution or handle error
+		it.weight.value = next.literal.(float64)
+		it.advance()
+	}
 
-	i.weight.unit = i.build()
+	next = it.peek()
+
+	if next.variant == WeightUnit {
+		// TODO: failed assertion would cause a runtime panic -> find better solution or handle error
+		it.weight.unit = next.literal.(string)
+		it.advance()
+	}
+
+	// if there is already a weight we want create a second exercise with the same name
+	// e.g. Benchpress @100 8/8 @95 8/8 -> Benchpress 100kg 8/8
+	//                                  -> Benchpress 95kg 8/8
+
+	if it.weight.value != 0 {
+		it.exerciseIndex++
+		it.reps = nil
+	}
+
+	it.exercises[it.exerciseIndex] = Exercise{it.exerciseName, it.weight, it.reps}
 }
 
-func (i *Interpreter) interpret(tokens []Token) (exercises []Exercise, err error) {
-	for !i.isAtEnd(tokens) {
-		i.start = i.current
-		token := i.advance(tokens)
+func (it *Interpreter) interpret() (exercises []Exercise, err error) {
+	for !it.isAtEnd() {
+		it.start = it.current
+		token := it.advance()
 
 		switch token.variant {
 		case "HYPHEN":
 		case "STRING":
-			i.processExerciseName(token)
+			it.processExerciseName(token)
 
 		case "ASPERAND":
-			// buildWeight()
+			it.processWeight()
 
 		case "NUMBER":
 			// buildRepetitions(token)
@@ -269,11 +289,15 @@ func (i *Interpreter) interpret(tokens []Token) (exercises []Exercise, err error
 
 	}
 
-	return i.exercises, nil
+	return it.exercises, nil
 }
 
 func newScanner(src []rune) (sc *Scanner) {
 	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
+}
+
+func newInterpreter(tokens []Token) (it *Interpreter) {
+	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0, exerciseIndex: 0, weight: Weight{0, ""}, reps: []int{}}
 }
 
 func Parse(source string) (exercises []Exercise, err error) {
@@ -281,15 +305,16 @@ func Parse(source string) (exercises []Exercise, err error) {
 		return nil, errors.New("empty source string")
 	}
 
-	scanner := newScanner([]rune(source))
-	tokens, errs := scanner.scan()
+	sc := newScanner([]rune(source))
+	tokens, errs := sc.scan()
 
 	for _, err := range errs {
 		fmt.Println(err)
 	}
 
-	// TODO: create interpreter
-	return (&Interpreter{}).interpret(tokens)
+	it := newInterpreter(tokens)
+
+	return it.interpret()
 }
 
 // utils
@@ -312,10 +337,3 @@ func isExerciseName(tv TokenVariant) bool {
 	return tv == String || tv == Hyphen || tv == WhiteSpace
 }
 
-func isWeightUnit(tv TokenVariant) bool {
-	return tv == WeightUnit
-}
-
-func isReps(tv TokenVariant) bool {
-	return tv == Number || tv == Asterisk || tv == WhiteSpace || tv == ForwardSlash
-}
