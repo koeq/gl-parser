@@ -38,8 +38,8 @@ func TestTokenization(t *testing.T) {
 		{EOF, "", nil, 2},
 	}
 
-	s := newScanner([]rune(input))
-	tokens, errs := s.scan()
+	sc := newScanner([]rune(input))
+	tokens, errs := sc.scan()
 	err := errs[0]
 
 	if err.Error() != "unexpected character \"$\" at line 2" {

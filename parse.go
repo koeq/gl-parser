@@ -25,31 +25,20 @@ const (
 	WhiteSpace   TokenVariant = "WHITE_SPACE"
 )
 
-var TokenVariantMap = map[rune]TokenVariant{
-	'@':  Asperand,
-	'*':  Asterisk,
-	'/':  ForwardSlash,
-	'-':  Hyphen,
-	'\n': Newline,
-	' ':  WhiteSpace,
-	'\r': WhiteSpace,
-	'\t': WhiteSpace,
+var TokenVariantMap = map[string]TokenVariant{
+	"@":  Asperand,
+	"*":  Asterisk,
+	"/":  ForwardSlash,
+	"-":  Hyphen,
+	"\n": Newline,
+	" ":  WhiteSpace,
+	"\r": WhiteSpace,
+	"\t": WhiteSpace,
 }
 
 var keywordVariantMap = map[string]TokenVariant{
 	"kg":  WeightUnit,
 	"lbs": WeightUnit,
-}
-
-type Weight struct {
-	value float64
-	unit  string
-}
-
-type Exercise struct {
-	name   string
-	weight Weight
-	reps   []int
 }
 
 type Token struct {
@@ -73,125 +62,217 @@ type ScanError struct {
 	r    string
 }
 
+type Exercise struct {
+	name   string
+	weight Weight
+	reps   []int
+}
+
+type Weight struct {
+	value float64
+	unit  string
+}
+
+type Interpreter struct {
+	tokens        []Token
+	exercises     []Exercise
+	start         int
+	current       int
+	exerciseIndex int
+	weight        Weight
+	reps          []int
+}
+
 func (e *ScanError) Error() string {
 	return fmt.Sprintf("unexpected character %q at line %d", e.r, e.line)
 }
 
-func (s *Scanner) isAtEnd() bool {
-	return s.current >= len(s.src)
+func (sc *Scanner) isAtEnd() bool {
+	return sc.current >= len(sc.src)
 }
 
-func (s *Scanner) isNextAtEnd() bool {
-	return s.current+1 >= len(s.src)
+func (sc *Scanner) isNextAtEnd() bool {
+	return sc.current+1 >= len(sc.src)
 }
 
-func (s *Scanner) advance() rune {
-	next := s.src[s.current]
-	s.current++
+func (sc *Scanner) advance() string {
+	next := string(sc.src[sc.current])
+	sc.current++
 
 	return next
 }
 
-func (s *Scanner) addToken(variant TokenVariant, lexeme string, literal interface{}) {
-	s.tokens = append(s.tokens, Token{variant, lexeme, literal, s.line})
+func (sc *Scanner) addToken(variant TokenVariant, lexeme string, literal interface{}) {
+	sc.tokens = append(sc.tokens, Token{variant, lexeme, literal, sc.line})
 
 	if variant == Newline {
-		s.line++
+		sc.line++
 	}
 }
 
-func (s *Scanner) peek() rune {
-	if s.isAtEnd() {
-		return 0
+func (sc *Scanner) peek() string {
+	if sc.isAtEnd() {
+		return ""
 	}
 
-	return s.src[s.current]
+	return string(sc.src[sc.current])
 }
 
-func (s *Scanner) processWord() {
-	for isLetter(s.peek()) {
-		s.advance()
+func (sc *Scanner) processWord() {
+	for isWord(sc.peek()) {
+		sc.advance()
 	}
 
-	word := string(s.src[s.start:s.current])
+	word := string(sc.src[sc.start:sc.current])
 	tokenVariant, isKeyword := keywordVariantMap[word]
 
 	if isKeyword {
-		s.addToken(tokenVariant, word, word)
+		sc.addToken(tokenVariant, word, word)
 	} else {
-		s.addToken(String, word, word)
+		sc.addToken(String, word, word)
 	}
 }
 
-func (s *Scanner) peekNext() rune {
-	if s.isNextAtEnd() {
-		return 0
+func (sc *Scanner) peekNext() string {
+	if sc.isNextAtEnd() {
+		return ""
 	}
 
-	return s.src[s.current+1]
+	return string(sc.src[sc.current+1])
 }
 
-func (s *Scanner) processNumber() {
-	for isDigit(s.peek()) {
-		s.advance()
+func (sc *Scanner) processNumber() {
+	for isNumber(sc.peek()) {
+		sc.advance()
 	}
 
 	// look for fractional part
-	if s.peek() == '.' || s.peek() == ',' && isDigit(s.peekNext()) {
+	if sc.peek() == "." || sc.peek() == "," && isNumber(sc.peekNext()) {
 		// consume it
-		s.advance()
+		sc.advance()
 
-		for isDigit(s.peek()) {
-			s.advance()
+		for isNumber(sc.peek()) {
+			sc.advance()
 		}
 	}
 
-	sNum := strings.Replace(string(s.src[s.start:s.current]), ",", ".", 1)
+	sNum := strings.Replace(string(sc.src[sc.start:sc.current]), ",", ".", 1)
 	f, err := strconv.ParseFloat(sNum, 32)
 
 	if err != nil {
-		s.errors = append(s.errors, ScanError{s.line, sNum})
+		sc.errors = append(sc.errors, ScanError{sc.line, sNum})
 	} else {
-		s.addToken(Number, sNum, f)
+		sc.addToken(Number, sNum, f)
 	}
 }
 
-func (s *Scanner) tokenize() {
-	r := s.advance()
+func (sc *Scanner) tokenize() {
+	s := sc.advance()
 
-	switch r {
-	case '@', '*', '/', '-', '\n', ' ', '\r', '\t':
-		s.addToken(TokenVariantMap[r], string(r), nil)
+	switch s {
+	case "@", "*", "/", "-", "\n", " ", "\r", "\t":
+		sc.addToken(TokenVariantMap[s], s, nil)
 	default:
 		switch {
-		case isLetter(r):
-			s.processWord()
-		case isDigit(r):
-			s.processNumber()
+		case isWord(s):
+			sc.processWord()
+		case isNumber(s):
+			sc.processNumber()
 		default:
-			s.errors = append(s.errors, ScanError{s.line, string(r)})
+			sc.errors = append(sc.errors, ScanError{sc.line, s})
 		}
 	}
 }
 
-func (s *Scanner) scan() (tokens []Token, errs []ScanError) {
-	for !s.isAtEnd() {
-		s.start = s.current
-		s.tokenize()
+func (sc *Scanner) scan() (tokens []Token, errs []ScanError) {
+	for !sc.isAtEnd() {
+		sc.start = sc.current
+		sc.tokenize()
 	}
 
-	return append(s.tokens, Token{"EOF", "", nil, s.line}), s.errors
+	return append(sc.tokens, Token{"EOF", "", nil, sc.line}), sc.errors
 
 }
 
-type Interpreter struct{}
+func (i *Interpreter) isAtEnd(tokens []Token) bool {
+	return tokens[i.current].variant == EOF
+}
+
+func (i *Interpreter) advance(tokens []Token) Token {
+	token := tokens[i.current]
+	i.current++
+
+	return token
+}
+
+func (i *Interpreter) peek(tokens []Token) Token {
+	return tokens[i.current]
+}
+
+func (i *Interpreter) build() string {
+	var builder strings.Builder
+	ts := i.tokens[i.start:i.current]
+
+	for _, t := range ts {
+		builder.WriteString(strings.TrimSpace(t.lexeme))
+	}
+
+	return builder.String()
+}
+
+func (i *Interpreter) processExerciseName(token Token) {
+	for isExerciseName(token.variant) {
+		next := i.peek(i.tokens)
+
+		if isExerciseName(next.variant) {
+			token = i.advance(i.tokens)
+		}
+	}
+
+	// reset interpreter state
+	i.weight.unit = ""
+	i.weight.value = 0
+	i.reps = nil
+
+	i.exerciseIndex++
+
+	name := i.build()
+	i.exercises = append(i.exercises, Exercise{name, i.weight, i.reps})
+}
+
+func (i *Interpreter) processWeight(token Token) {
+	// next := i.peek(i.tokens)
+
+	// if isDigit(next.lexeme) {
+	// 	token = i.advance(i.tokens)
+	// }
+
+	i.weight.unit = i.build()
+}
 
 func (i *Interpreter) interpret(tokens []Token) (exercises []Exercise, err error) {
+	for !i.isAtEnd(tokens) {
+		i.start = i.current
+		token := i.advance(tokens)
 
-	return []Exercise{}, nil
+		switch token.variant {
+		case "HYPHEN":
+		case "STRING":
+			i.processExerciseName(token)
+
+		case "ASPERAND":
+			// buildWeight()
+
+		case "NUMBER":
+			// buildRepetitions(token)
+		}
+
+	}
+
+	return i.exercises, nil
 }
 
-func newScanner(src []rune) (s *Scanner) {
+func newScanner(src []rune) (sc *Scanner) {
 	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
 }
 
@@ -203,7 +284,6 @@ func Parse(source string) (exercises []Exercise, err error) {
 	scanner := newScanner([]rune(source))
 	tokens, errs := scanner.scan()
 
-	// report scanning errors
 	for _, err := range errs {
 		fmt.Println(err)
 	}
@@ -215,14 +295,27 @@ func Parse(source string) (exercises []Exercise, err error) {
 // utils
 var (
 	// match letters + combining marks
-	letterRegex = regexp.MustCompile(`[\p{L}\p{M}]`)
-	digitRegex  = regexp.MustCompile(`\d`)
+	wordRegex = regexp.MustCompile(`[\p{L}\p{M}]+`)
+	// match int or float
+	numberRegex = regexp.MustCompile(`\d+(\.\d+)?`)
 )
 
-func isLetter(r rune) bool {
-	return letterRegex.MatchString(string(r))
+func isWord(sc string) bool {
+	return wordRegex.MatchString(sc)
 }
 
-func isDigit(r rune) bool {
-	return digitRegex.MatchString(string(r))
+func isNumber(sc string) bool {
+	return numberRegex.MatchString(sc)
+}
+
+func isExerciseName(tv TokenVariant) bool {
+	return tv == String || tv == Hyphen || tv == WhiteSpace
+}
+
+func isWeightUnit(tv TokenVariant) bool {
+	return tv == WeightUnit
+}
+
+func isReps(tv TokenVariant) bool {
+	return tv == Number || tv == Asterisk || tv == WhiteSpace || tv == ForwardSlash
 }
