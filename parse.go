@@ -1,4 +1,4 @@
-package parse
+package main
 
 import (
 	"errors"
@@ -25,7 +25,7 @@ const (
 	WhiteSpace   TokenVariant = "WHITE_SPACE"
 )
 
-var TokenVariantMap = map[string]TokenVariant{
+var tokenVariantMap = map[string]TokenVariant{
 	"@":  Asperand,
 	"*":  Asterisk,
 	"/":  ForwardSlash,
@@ -172,7 +172,7 @@ func (sc *Scanner) tokenize() {
 
 	switch s {
 	case "@", "*", "/", "-", "\n", " ", "\r", "\t":
-		sc.addToken(TokenVariantMap[s], s, nil)
+		sc.addToken(tokenVariantMap[s], s, nil)
 	default:
 		switch {
 		case isWord(s):
@@ -191,8 +191,13 @@ func (sc *Scanner) scan() (tokens []Token, errs []ScanError) {
 		sc.tokenize()
 	}
 
-	return append(sc.tokens, Token{"EOF", "", nil, sc.line}), sc.errors
+	sc.addToken(EOF, "", nil)
 
+	return sc.tokens, sc.errors
+}
+
+func newScanner(src []rune) (sc *Scanner) {
+	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
 }
 
 func (it *Interpreter) isAtEnd() bool {
@@ -225,9 +230,11 @@ func (it *Interpreter) processExerciseName(token Token) {
 	for isExerciseName(token.variant) {
 		next := it.peek()
 
-		if isExerciseName(next.variant) {
-			token = it.advance()
+		if !isExerciseName(next.variant) {
+			break
 		}
+
+		token = it.advance()
 	}
 
 	// reset interpreter state
@@ -241,6 +248,7 @@ func (it *Interpreter) processExerciseName(token Token) {
 	it.exercises = append(it.exercises, Exercise{name, it.weight, it.reps})
 }
 
+// TODO: index out of bounds error happening here
 func (it *Interpreter) processWeight() {
 	next := it.peek()
 
@@ -253,7 +261,7 @@ func (it *Interpreter) processWeight() {
 	next = it.peek()
 
 	if next.variant == WeightUnit {
-		// TODO: failed assertion would cause a runtime panic -> find better solution or handle error
+		// TODO: failed assertion causes a runtime panic -> find better solution or handle error
 		it.weight.unit = next.literal.(string)
 		it.advance()
 	}
@@ -261,10 +269,63 @@ func (it *Interpreter) processWeight() {
 	// if there is already a weight we want create a second exercise with the same name
 	// e.g. Benchpress @100 8/8 @95 8/8 -> Benchpress 100kg 8/8
 	//                                  -> Benchpress 95kg 8/8
-
 	if it.weight.value != 0 {
 		it.exerciseIndex++
 		it.reps = nil
+	}
+
+	it.exercises[it.exerciseIndex] = Exercise{it.exerciseName, it.weight, it.reps}
+}
+
+func (it *Interpreter) processReps(token Token) {
+	for isReps(token.variant) {
+		next := it.peek()
+
+		if !isReps(next.variant) {
+			break
+		}
+
+		token = it.advance()
+	}
+
+	repStr := it.build()
+
+	// format: int*int
+	if isRepsMultiplierFormat(repStr) {
+		multiplierReps := strings.Split(repStr, "*")
+		multiplier, mErr := strconv.Atoi(multiplierReps[0])
+		repCount, rErr := strconv.Atoi(multiplierReps[1])
+
+		if mErr != nil && rErr != nil {
+			fmt.Println("error parsing reps: ", mErr, rErr)
+
+			return
+		}
+
+		it.reps = make([]int, 0, multiplier)
+
+		for i := 0; i < multiplier; i++ {
+			it.reps = append(it.reps, repCount)
+		}
+	}
+
+	// format: int/int/int
+	if isRepsEnumerationFormat(repStr) {
+		numStrs := intRegex.FindAllString(repStr, -1)
+		it.reps = make([]int, 0, len(numStrs))
+
+		for _, s := range numStrs {
+
+			num, err := strconv.Atoi(s)
+
+			if err != nil {
+				fmt.Println("error parsing reps: ", err)
+
+				continue
+			}
+
+			it.reps = append(it.reps, num)
+		}
 	}
 
 	it.exercises[it.exerciseIndex] = Exercise{it.exerciseName, it.weight, it.reps}
@@ -276,28 +337,24 @@ func (it *Interpreter) interpret() (exercises []Exercise, err error) {
 		token := it.advance()
 
 		switch token.variant {
-		case "HYPHEN":
-		case "STRING":
+		case "HYPHEN", "STRING":
 			it.processExerciseName(token)
 
 		case "ASPERAND":
 			it.processWeight()
 
 		case "NUMBER":
-			// buildRepetitions(token)
+			it.processReps(token)
 		}
+		// TODO: what happens if a different token variant is encountered (e.g. asterisk)?
 
 	}
 
 	return it.exercises, nil
 }
 
-func newScanner(src []rune) (sc *Scanner) {
-	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
-}
-
 func newInterpreter(tokens []Token) (it *Interpreter) {
-	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0, exerciseIndex: 0, weight: Weight{0, ""}, reps: []int{}}
+	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0, exerciseIndex: 0, weight: Weight{0, ""}, reps: nil}
 }
 
 func Parse(source string) (exercises []Exercise, err error) {
@@ -319,21 +376,38 @@ func Parse(source string) (exercises []Exercise, err error) {
 
 // utils
 var (
-	// match letters + combining marks
-	wordRegex = regexp.MustCompile(`[\p{L}\p{M}]+`)
-	// match int or float
-	numberRegex = regexp.MustCompile(`\d+(\.\d+)?`)
+	wordRegex                  = regexp.MustCompile(`[\p{L}\p{M}]+`) // match letters + combining marks
+	numberRegex                = regexp.MustCompile(`\d+(\.\d+)?`)   // match number with optional fractional part
+	repsMultiplierFormatRegex  = regexp.MustCompile(`\d+\*\d+`)      // match reps in format int*int
+	repsEnumerationFormatRegex = regexp.MustCompile(`\d+(,\d+)+`)    // match reps in format int/int/int
+	intRegex                   = regexp.MustCompile(`\d+`)           // match any int
+
 )
 
-func isWord(sc string) bool {
-	return wordRegex.MatchString(sc)
+func isWord(s string) bool {
+	return wordRegex.MatchString(s)
 }
 
-func isNumber(sc string) bool {
-	return numberRegex.MatchString(sc)
+func isNumber(s string) bool {
+	return numberRegex.MatchString(s)
 }
 
 func isExerciseName(tv TokenVariant) bool {
 	return tv == String || tv == Hyphen || tv == WhiteSpace
 }
 
+func isReps(tv TokenVariant) bool {
+	return tv == Number || tv == ForwardSlash || tv == Asterisk
+}
+
+func isRepsMultiplierFormat(s string) bool {
+	return repsMultiplierFormatRegex.MatchString(s)
+}
+
+func isRepsEnumerationFormat(s string) bool {
+	return repsEnumerationFormatRegex.MatchString(s)
+}
+
+func main() {
+	Parse("Benchpress @90kg")
+}
