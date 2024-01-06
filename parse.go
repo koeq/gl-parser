@@ -222,17 +222,22 @@ func (it *Interpreter) build() string {
 	return builder.String()
 }
 
-func (it *Interpreter) processExerciseName(token Token) {
-	for isExerciseName(token.variant) {
+func (it *Interpreter) consumeWhile(token Token, predicate func(tv TokenVariant) bool) Token {
+	for predicate(token.variant) {
 		next := it.peek()
 
-		if !isExerciseName(next.variant) {
+		if !predicate(next.variant) {
 			break
 		}
 
 		token = it.advance()
 	}
 
+	return token
+}
+
+func (it *Interpreter) processExerciseName(token Token) {
+	it.consumeWhile(token, isExerciseName)
 	name := it.build()
 	it.exercises = append(it.exercises, Exercise{name, Weight{value: 0, unit: ""}, nil})
 }
@@ -276,16 +281,7 @@ func (it *Interpreter) processReps(token Token) {
 	var reps []int
 	currExercise := &it.exercises[len(it.exercises)-1]
 
-	for isReps(token.variant) {
-		next := it.peek()
-
-		if !isReps(next.variant) {
-			break
-		}
-
-		token = it.advance()
-	}
-
+	it.consumeWhile(token, isReps)
 	repStr := it.build()
 
 	// format: int*int
@@ -413,6 +409,6 @@ func isRepsEnumerationFormat(s string) bool {
 }
 
 func main() {
-	exercises, _ := Parse("Benchpress @90kg 5*10")
+	exercises, _ := Parse("Benchpress @90kg 5*10 \n Squats @100kg 5*10")
 	fmt.Println(exercises)
 }
