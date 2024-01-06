@@ -74,14 +74,10 @@ type Weight struct {
 }
 
 type Interpreter struct {
-	tokens        []Token
-	exercises     []Exercise
-	start         int
-	current       int
-	exerciseIndex int
-	exerciseName  string
-	weight        Weight
-	reps          []int
+	tokens    []Token
+	exercises []Exercise
+	start     int
+	current   int
 }
 
 func (e *ScanError) Error() string {
@@ -237,24 +233,20 @@ func (it *Interpreter) processExerciseName(token Token) {
 		token = it.advance()
 	}
 
-	// reset interpreter state
-	it.weight.unit = ""
-	it.weight.value = 0
-	it.reps = nil
-
-	it.exerciseIndex++
-
 	name := it.build()
-	it.exercises = append(it.exercises, Exercise{name, it.weight, it.reps})
+	it.exercises = append(it.exercises, Exercise{name, Weight{value: 0, unit: ""}, nil})
 }
 
 // TODO: index out of bounds error happening here
 func (it *Interpreter) processWeight() {
+	var weight Weight
+	currExercise := &it.exercises[len(it.exercises)-1]
+
 	next := it.peek()
 
 	if next.variant == Number {
 		// TODO: failed assertion would cause a runtime panic -> find better solution or handle error
-		it.weight.value = next.literal.(float64)
+		weight.value = next.literal.(float64)
 		it.advance()
 	}
 
@@ -262,22 +254,28 @@ func (it *Interpreter) processWeight() {
 
 	if next.variant == WeightUnit {
 		// TODO: failed assertion causes a runtime panic -> find better solution or handle error
-		it.weight.unit = next.literal.(string)
+		weight.unit = next.literal.(string)
 		it.advance()
+	} else {
+		// TODO: provide config to specify weight unit
+		// default weight unit
+		weight.unit = "kg"
 	}
 
 	// if there is already a weight we want create a second exercise with the same name
-	// e.g. Benchpress @100 8/8 @95 8/8 -> Benchpress 100kg 8/8
-	//                                  -> Benchpress 95kg 8/8
-	if it.weight.value != 0 {
-		it.exerciseIndex++
-		it.reps = nil
+	// --> 	Benchpress @100 8/8 @102 8/8  -> 	Benchpress 100kg 8/8
+	//                                  	 		Benchpress 102kg 8/8
+	if currExercise.weight.value != 0 {
+		it.exercises = append(it.exercises, Exercise{currExercise.name, weight, nil})
+	} else {
+		currExercise.weight = weight
 	}
-
-	it.exercises[it.exerciseIndex] = Exercise{it.exerciseName, it.weight, it.reps}
 }
 
 func (it *Interpreter) processReps(token Token) {
+	var reps []int
+	currExercise := &it.exercises[len(it.exercises)-1]
+
 	for isReps(token.variant) {
 		next := it.peek()
 
@@ -302,17 +300,21 @@ func (it *Interpreter) processReps(token Token) {
 			return
 		}
 
-		it.reps = make([]int, 0, multiplier)
+		reps = make([]int, 0, multiplier)
 
 		for i := 0; i < multiplier; i++ {
-			it.reps = append(it.reps, repCount)
+			reps = append(reps, repCount)
 		}
+
+		currExercise.reps = reps
+
+		return
 	}
 
 	// format: int/int/int
 	if isRepsEnumerationFormat(repStr) {
 		numStrs := intRegex.FindAllString(repStr, -1)
-		it.reps = make([]int, 0, len(numStrs))
+		reps = make([]int, 0, len(numStrs))
 
 		for _, s := range numStrs {
 
@@ -324,11 +326,13 @@ func (it *Interpreter) processReps(token Token) {
 				continue
 			}
 
-			it.reps = append(it.reps, num)
+			reps = append(reps, num)
 		}
-	}
 
-	it.exercises[it.exerciseIndex] = Exercise{it.exerciseName, it.weight, it.reps}
+		currExercise.reps = reps
+
+		return
+	}
 }
 
 func (it *Interpreter) interpret() (exercises []Exercise, err error) {
@@ -354,7 +358,7 @@ func (it *Interpreter) interpret() (exercises []Exercise, err error) {
 }
 
 func newInterpreter(tokens []Token) (it *Interpreter) {
-	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0, exerciseIndex: 0, weight: Weight{0, ""}, reps: nil}
+	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0}
 }
 
 func Parse(source string) (exercises []Exercise, err error) {
@@ -376,11 +380,11 @@ func Parse(source string) (exercises []Exercise, err error) {
 
 // utils
 var (
-	wordRegex                  = regexp.MustCompile(`[\p{L}\p{M}]+`) // match letters + combining marks
-	numberRegex                = regexp.MustCompile(`\d+(\.\d+)?`)   // match number with optional fractional part
-	repsMultiplierFormatRegex  = regexp.MustCompile(`\d+\*\d+`)      // match reps in format int*int
-	repsEnumerationFormatRegex = regexp.MustCompile(`\d+(,\d+)+`)    // match reps in format int/int/int
-	intRegex                   = regexp.MustCompile(`\d+`)           // match any int
+	wordRegex                  = regexp.MustCompile(`[\p{L}\p{M}]+`)  // match letters + combining marks
+	numberRegex                = regexp.MustCompile(`\d+(\.\d+)?`)    // match number with optional fractional part
+	repsMultiplierFormatRegex  = regexp.MustCompile(`\d+\*\d+`)       // match reps in format int*int
+	repsEnumerationFormatRegex = regexp.MustCompile(`\d+(\/\d+)*\/?`) // match reps in format int/int/int
+	intRegex                   = regexp.MustCompile(`\d+`)            // match any int
 
 )
 
@@ -409,5 +413,6 @@ func isRepsEnumerationFormat(s string) bool {
 }
 
 func main() {
-	Parse("Benchpress @90kg")
+	exercises, _ := Parse("Benchpress @90kg 5*10")
+	fmt.Println(exercises)
 }
