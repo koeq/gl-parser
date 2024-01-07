@@ -196,24 +196,24 @@ func newScanner(src []rune) (sc *Scanner) {
 	return &Scanner{src: src, tokens: []Token{}, start: 0, current: 0, line: 1}
 }
 
-func (it *Interpreter) isAtEnd() bool {
-	return it.tokens[it.current].variant == EOF
+func (in *Interpreter) isAtEnd() bool {
+	return in.tokens[in.current].variant == EOF
 }
 
-func (it *Interpreter) advance() Token {
-	token := it.tokens[it.current]
-	it.current++
+func (in *Interpreter) advance() Token {
+	token := in.tokens[in.current]
+	in.current++
 
 	return token
 }
 
-func (it *Interpreter) peek() Token {
-	return it.tokens[it.current]
+func (in *Interpreter) peek() Token {
+	return in.tokens[in.current]
 }
 
-func (it *Interpreter) build() string {
+func (in *Interpreter) buildStr() string {
 	var builder strings.Builder
-	ts := it.tokens[it.start:it.current]
+	ts := in.tokens[in.start:in.current]
 
 	for _, t := range ts {
 		builder.WriteString(strings.TrimSpace(t.lexeme))
@@ -222,45 +222,44 @@ func (it *Interpreter) build() string {
 	return builder.String()
 }
 
-func (it *Interpreter) consumeWhile(token Token, predicate func(tv TokenVariant) bool) Token {
+func (in *Interpreter) consumeWhile(token Token, predicate func(tv TokenVariant) bool) Token {
 	for predicate(token.variant) {
-		next := it.peek()
+		next := in.peek()
 
 		if !predicate(next.variant) {
 			break
 		}
 
-		token = it.advance()
+		token = in.advance()
 	}
 
 	return token
 }
 
-func (it *Interpreter) processExerciseName(token Token) {
-	it.consumeWhile(token, isExerciseName)
-	name := it.build()
-	it.exercises = append(it.exercises, Exercise{name, Weight{value: 0, unit: ""}, nil})
+func (in *Interpreter) processExerciseName(token Token) {
+	in.consumeWhile(token, isExerciseName)
+	name := in.buildStr()
+	in.exercises = append(in.exercises, Exercise{name, Weight{value: 0, unit: ""}, nil})
 }
 
-// TODO: index out of bounds error happening here
-func (it *Interpreter) processWeight() {
+func (in *Interpreter) processWeight() {
 	var weight Weight
-	currExercise := &it.exercises[len(it.exercises)-1]
+	currExercise := &in.exercises[len(in.exercises)-1]
 
-	next := it.peek()
+	next := in.peek()
 
 	if next.variant == Number {
 		// TODO: failed assertion would cause a runtime panic -> find better solution or handle error
 		weight.value = next.literal.(float64)
-		it.advance()
+		in.advance()
 	}
 
-	next = it.peek()
+	next = in.peek()
 
 	if next.variant == WeightUnit {
 		// TODO: failed assertion causes a runtime panic -> find better solution or handle error
 		weight.unit = next.literal.(string)
-		it.advance()
+		in.advance()
 	} else {
 		// TODO: provide config to specify weight unit
 		// default weight unit
@@ -271,89 +270,58 @@ func (it *Interpreter) processWeight() {
 	// --> 	Benchpress @100 8/8 @102 8/8  -> 	Benchpress 100kg 8/8
 	//                                  	 		Benchpress 102kg 8/8
 	if currExercise.weight.value != 0 {
-		it.exercises = append(it.exercises, Exercise{currExercise.name, weight, nil})
+		in.exercises = append(in.exercises, Exercise{currExercise.name, weight, nil})
 	} else {
 		currExercise.weight = weight
 	}
 }
 
-func (it *Interpreter) processReps(token Token) {
+func (in *Interpreter) processReps(token Token) {
+	in.consumeWhile(token, isReps)
+	repStr := in.buildStr()
+
 	var reps []int
-	currExercise := &it.exercises[len(it.exercises)-1]
+	var err error
 
-	it.consumeWhile(token, isReps)
-	repStr := it.build()
-
-	// format: int*int
+	// int*int
 	if isRepsMultiplierFormat(repStr) {
-		multiplierReps := strings.Split(repStr, "*")
-		multiplier, mErr := strconv.Atoi(multiplierReps[0])
-		repCount, rErr := strconv.Atoi(multiplierReps[1])
-
-		if mErr != nil && rErr != nil {
-			fmt.Println("error parsing reps: ", mErr, rErr)
-
-			return
-		}
-
-		reps = make([]int, 0, multiplier)
-
-		for i := 0; i < multiplier; i++ {
-			reps = append(reps, repCount)
-		}
-
-		currExercise.reps = reps
-
-		return
+		reps, err = parseMultiplierFormat(repStr)
+		// int/int/int
+	} else if isRepsEnumerationFormat(repStr) {
+		reps, err = parseEnumerationFormat(repStr)
 	}
 
-	// format: int/int/int
-	if isRepsEnumerationFormat(repStr) {
-		numStrs := intRegex.FindAllString(repStr, -1)
-		reps = make([]int, 0, len(numStrs))
-
-		for _, s := range numStrs {
-
-			num, err := strconv.Atoi(s)
-
-			if err != nil {
-				fmt.Println("error parsing reps: ", err)
-
-				continue
-			}
-
-			reps = append(reps, num)
-		}
-
-		currExercise.reps = reps
-
-		return
+	if err != nil {
+		// TODO: add interpreter error handling
 	}
+
+	currExercise := &in.exercises[len(in.exercises)-1]
+	currExercise.reps = reps
 }
 
-func (it *Interpreter) interpret() (exercises []Exercise, err error) {
-	for !it.isAtEnd() {
-		it.start = it.current
-		token := it.advance()
+func (in *Interpreter) interpret() (exercises []Exercise, err error) {
+	for !in.isAtEnd() {
+		in.start = in.current
+		token := in.advance()
 
 		switch token.variant {
 		case "HYPHEN", "STRING":
-			it.processExerciseName(token)
+			in.processExerciseName(token)
 
 		case "ASPERAND":
-			it.processWeight()
+			in.processWeight()
 
 		case "NUMBER":
-			it.processReps(token)
+			in.processReps(token)
+		default:
+			// TODO: add error handling if unexpected token is encountered
 		}
-		// TODO: what happens if a different token variant is encountered (e.g. asterisk)?
-
 	}
 
-	return it.exercises, nil
+	return in.exercises, nil
 }
 
-func newInterpreter(tokens []Token) (it *Interpreter) {
+func newInterpreter(tokens []Token) (in *Interpreter) {
 	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0}
 }
 
@@ -369,9 +337,9 @@ func Parse(source string) (exercises []Exercise, err error) {
 		fmt.Println(err)
 	}
 
-	it := newInterpreter(tokens)
+	in := newInterpreter(tokens)
 
-	return it.interpret()
+	return in.interpret()
 }
 
 // utils
@@ -408,7 +376,50 @@ func isRepsEnumerationFormat(s string) bool {
 	return repsEnumerationFormatRegex.MatchString(s)
 }
 
+func parseMultiplierFormat(s string) ([]int, error) {
+	var reps []int
+
+	multiplierReps := strings.Split(s, "*")
+	multiplier, err := strconv.Atoi(multiplierReps[0])
+
+	if err != nil {
+		return nil, err
+	}
+
+	repCount, err := strconv.Atoi(multiplierReps[1])
+
+	if err != nil {
+		return nil, err
+	}
+
+	reps = make([]int, 0, multiplier)
+
+	for i := 0; i < multiplier; i++ {
+		reps = append(reps, repCount)
+	}
+
+	return reps, nil
+}
+
+func parseEnumerationFormat(s string) ([]int, error) {
+	numStrs := intRegex.FindAllString(s, -1)
+	reps := make([]int, 0, len(numStrs))
+
+	for _, s := range numStrs {
+
+		num, err := strconv.Atoi(s)
+
+		if err != nil {
+			return nil, err
+		}
+
+		reps = append(reps, num)
+	}
+
+	return reps, nil
+}
+
 func main() {
-	exercises, _ := Parse("Benchpress @90kg 5*10 \n Squats @100kg 5*10")
+	exercises, _ := Parse("Benchpress @90kg 5/5/5 \n Squats @100kg 5*10")
 	fmt.Println(exercises)
 }
