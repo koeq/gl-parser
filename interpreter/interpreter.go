@@ -39,7 +39,7 @@ func (in *Interpreter) buildStr() string {
 	ts := in.tokens[in.start:in.current]
 
 	for _, t := range ts {
-		builder.WriteString(strings.TrimSpace(t.Lexeme))
+		builder.WriteString(t.Lexeme)
 	}
 
 	return builder.String()
@@ -65,7 +65,7 @@ func isExerciseName(tv TokenVariant) bool {
 
 func (in *Interpreter) processExerciseName(token Token) {
 	in.consumeWhile(token, isExerciseName)
-	name := in.buildStr()
+	name := strings.TrimSpace(in.buildStr())
 	in.exercises = append(in.exercises, Exercise{Name: name, Weight: Weight{Value: 0, Unit: ""}, Reps: nil})
 }
 

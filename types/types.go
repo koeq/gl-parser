@@ -23,13 +23,14 @@ type Token struct {
 	Line    int
 }
 
+type Weight struct {
+	Value float64
+	Unit  string
+}
+
 type Exercise struct {
 	Name   string
 	Weight Weight
 	Reps   []int
 }
 
-type Weight struct {
-	Value float64
-	Unit  string
-}
