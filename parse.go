@@ -10,6 +10,7 @@ import (
 )
 
 func Parse(source string) (exercises []Exercise, err error) {
+
 	if source == "" {
 		return nil, errors.New("empty source string")
 	}
@@ -18,7 +19,7 @@ func Parse(source string) (exercises []Exercise, err error) {
 	tokens, errs := sc.Scan()
 
 	for _, err := range errs {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 	}
 
 	in := interpreter.NewInterpreter(tokens)
