@@ -71,7 +71,7 @@ func TestTokenization(t *testing.T) {
 }
 
 func TestParsing(t *testing.T) {
-	input := "Bench Press @90kg 5/5/5 \n Squats @100kg 3*10"
+	input := "Bench Press @90kg 5/5/5 \n Squats @100kg 3*10 @140lbs 10 \n Dumbbell#-Rows @20 8/8/"
 
 	expected := []Exercise{
 		{
@@ -89,6 +89,22 @@ func TestParsing(t *testing.T) {
 				Unit:  "kg",
 			},
 			Reps: []int{10, 10, 10},
+		},
+		{
+			Name: "Squats",
+			Weight: Weight{
+				Value: 140.0,
+				Unit:  "lbs",
+			},
+			Reps: []int{10},
+		},
+		{
+			Name: "Dumbbell-Rows",
+			Weight: Weight{
+				Value: 20.0,
+				Unit:  "kg",
+			},
+			Reps: []int{8, 8},
 		},
 	}
 
