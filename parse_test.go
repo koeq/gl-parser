@@ -108,7 +108,7 @@ func TestParsing(t *testing.T) {
 		},
 	}
 
-	if exercises, _ := Parse(input); reflect.DeepEqual(exercises, expected) != true {
+	if exercises, _ := Parse(input, NewConfig(WithWeightUnit(Metric))); reflect.DeepEqual(exercises, expected) != true {
 		t.Errorf("Expected exercises %v, got %v", expected, exercises)
 	}
 }

@@ -1,6 +1,7 @@
 package interpreter
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 )
 
 type Interpreter struct {
+	config    *Config
 	tokens    []Token
 	exercises []Exercise
 	start     int
@@ -69,6 +71,16 @@ func (in *Interpreter) processExerciseName(token Token) {
 	in.exercises = append(in.exercises, Exercise{Name: name, Weight: Weight{Value: 0, Unit: ""}, Reps: nil})
 }
 
+func NewUnit(s string) (Unit, error) {
+	if s == "kg" {
+		return Metric, nil
+	} else if s == "lbs" {
+		return Imperial, nil
+	}
+
+	return "", errors.New("invalid weight unit")
+}
+
 func (in *Interpreter) processWeight() {
 	var weight Weight
 	currExercise := &in.exercises[len(in.exercises)-1]
@@ -85,12 +97,18 @@ func (in *Interpreter) processWeight() {
 
 	if next.Variant == WeightUnit {
 		// TODO: failed assertion causes a runtime panic -> find better solution or handle error
-		weight.Unit = next.Literal.(string)
+		unit, err := NewUnit(next.Literal.(string))
+
+		if err != nil {
+			// TODO: handle err
+		} else {
+			weight.Unit = unit
+		}
+
 		in.advance()
 	} else {
-		// TODO: provide config to specify weight unit
-		// default weight unit
-		weight.Unit = "kg"
+		// fallback to weight unit from config -> defaults to "kg"
+		weight.Unit = in.config.WeightUnit
 	}
 
 	// if there is already a weight we want create a second exercise with the same name
@@ -203,6 +221,6 @@ func (in *Interpreter) Interpret() (exercises []Exercise, err error) {
 	return in.exercises, nil
 }
 
-func NewInterpreter(tokens []Token) (in *Interpreter) {
-	return &Interpreter{tokens: tokens, exercises: []Exercise{}, start: 0, current: 0}
+func NewInterpreter(tokens []Token, config *Config) (in *Interpreter) {
+	return &Interpreter{config: config, tokens: tokens, exercises: []Exercise{}, start: 0, current: 0}
 }

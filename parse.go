@@ -9,7 +9,31 @@ import (
 	. "github.com/koeq/gl-parser/types"
 )
 
-func Parse(source string) (exercises []Exercise, err error) {
+
+
+func WithWeightUnit(unit Unit) ConfigOption {
+	return func(c *Config) {
+		if unit != Metric && unit != Imperial {
+			panic(fmt.Sprintf("invalid weight unit: use '%s' or '%s' instead", Metric, Imperial))
+		}
+
+		c.WeightUnit = unit
+	}
+}
+
+func NewConfig(opts ...ConfigOption) *Config {
+	c := &Config{
+		WeightUnit: Metric,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func Parse(source string, config *Config) (exercises []Exercise, err error) {
 
 	if source == "" {
 		return nil, errors.New("empty source string")
@@ -22,7 +46,7 @@ func Parse(source string) (exercises []Exercise, err error) {
 		fmt.Println(err.Error())
 	}
 
-	in := interpreter.NewInterpreter(tokens)
+	in := interpreter.NewInterpreter(tokens, config)
 
 	return in.Interpret()
 }

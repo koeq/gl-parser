@@ -14,6 +14,19 @@ const (
 	WhiteSpace   TokenVariant = "WHITE_SPACE"
 )
 
+const (
+	Metric   Unit = "kg"
+	Imperial Unit = "lbs"
+)
+
+type Unit string
+
+type Config struct {
+	WeightUnit Unit
+}
+
+type ConfigOption func(*Config)
+
 type TokenVariant string
 
 type Token struct {
@@ -25,7 +38,7 @@ type Token struct {
 
 type Weight struct {
 	Value float64
-	Unit  string
+	Unit  Unit
 }
 
 type Exercise struct {
@@ -33,4 +46,3 @@ type Exercise struct {
 	Weight Weight
 	Reps   []int
 }
-
