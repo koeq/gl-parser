@@ -47,26 +47,19 @@ func (in *Interpreter) buildStr() string {
 	return builder.String()
 }
 
-func (in *Interpreter) consumeWhile(token Token, predicate func(tv TokenVariant) bool) Token {
-	for predicate(token.Variant) {
-		next := in.peek()
-
-		if !predicate(next.Variant) {
-			break
-		}
-
-		token = in.advance()
+func (in *Interpreter) advanceWhile(predicate func(tv TokenVariant) bool) {
+	for predicate(in.peek().Variant) {
+		in.advance()
 	}
 
-	return token
 }
 
 func isExerciseName(tv TokenVariant) bool {
 	return tv == String || tv == Hyphen || tv == WhiteSpace
 }
 
-func (in *Interpreter) processExerciseName(token Token) {
-	in.consumeWhile(token, isExerciseName)
+func (in *Interpreter) processExerciseName() {
+	in.advanceWhile(isExerciseName)
 	name := strings.TrimSpace(in.buildStr())
 	in.exercises = append(in.exercises, Exercise{Name: name, Weight: Weight{Value: 0, Unit: ""}, Reps: nil})
 }
@@ -176,8 +169,8 @@ func parseEnumerationFormat(s string) ([]int, error) {
 	return reps, nil
 }
 
-func (in *Interpreter) processReps(token Token) {
-	in.consumeWhile(token, isReps)
+func (in *Interpreter) processReps() {
+	in.advanceWhile(isReps)
 	repStr := in.buildStr()
 
 	var reps []int
@@ -206,13 +199,13 @@ func (in *Interpreter) Interpret() (exercises []Exercise, err error) {
 
 		switch token.Variant {
 		case "HYPHEN", "STRING":
-			in.processExerciseName(token)
+			in.processExerciseName()
 
 		case "ASPERAND":
 			in.processWeight()
 
 		case "NUMBER":
-			in.processReps(token)
+			in.processReps()
 		default:
 			// TODO: add error handling if unexpected token is encountered
 		}
